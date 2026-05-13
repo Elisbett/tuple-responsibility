@@ -4,18 +4,25 @@ All four optimisation levels (naive, early termination, cached, parallel)
 inherit from ResponsibilityComputer and override the compute() method.
 This strategy-pattern setup allows experiments to swap implementations
 without changing any surrounding code.
+
+Each compute() call is fully self-contained: the computer opens its own
+connection to the database, performs the contingency search, and closes
+the connection. No long-lived backend objects are shared across levels,
+which keeps each measurement isolated and avoids contention on the SQLite
+file when multi-process levels (Level 4) are added later.
 """
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Iterable
 
 from src.core.types import (
+    ComputeResult,
     ResponsibilityRanking,
     ResponsibilityResult,
     TupleId,
 )
-from src.db.sqlite_backend import SQLiteBackend
 
 
 class ResponsibilityComputer(ABC):
@@ -27,44 +34,20 @@ class ResponsibilityComputer(ABC):
 
         for ComputerClass in [NaiveComputer, EarlyTerminationComputer, ...]:
             ranking = ComputerClass().compute(
-                backend, rewritten_query, expected_answer, candidates
+                db_path, rewritten_query, expected_answer, candidates, ...
             )
     """
 
     @abstractmethod
     def compute(
         self,
-        backend: SQLiteBackend,
+        db_path: str | Path,
         rewritten_query: str,
         expected_answer: tuple,
         candidates: Iterable[TupleId],
         endogenous_tuples: Iterable[TupleId],
-    ) -> ResponsibilityRanking:
-        """Compute responsibility scores for each candidate tuple.
-
-        Parameters
-        ----------
-        backend : SQLiteBackend
-            An open connection to the database, with disabled columns
-            already added.
-        rewritten_query : str
-            The user query, already rewritten to include _disabled=0
-            filters on every table (see query_rewriter.rewrite_query).
-        expected_answer : tuple
-            The query answer whose responsibility is being analysed.
-            For example, ("Musical",) for a single-column query result.
-        candidates : Iterable[TupleId]
-            The set C of tuples to evaluate. Each will receive a
-            responsibility score in [0, 1].
-        endogenous_tuples : Iterable[TupleId]
-            The endogenous tuples D_n. Contingencies are drawn from
-            this set (excluding the candidate currently being evaluated).
-
-        Returns
-        -------
-        ResponsibilityRanking
-            A ranking containing one ResponsibilityResult per candidate.
-        """
+    ) -> ComputeResult:
+        """Compute responsibility scores for each candidate tuple."""
         raise NotImplementedError
 
     @staticmethod

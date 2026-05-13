@@ -20,53 +20,75 @@ evaluation. Tractable only for very small D_n (say, |D_n| <= 12).
 """
 from __future__ import annotations
 
+import time
 from itertools import combinations
+from pathlib import Path
 from typing import Iterable
 
 from src.core.responsibility import ResponsibilityComputer
 from src.core.types import (
+    ComputeResult,
     ResponsibilityRanking,
     ResponsibilityResult,
     TupleId,
 )
 from src.db.sqlite_backend import SQLiteBackend
 
-
 class NaiveComputer(ResponsibilityComputer):
     """Level 1: brute-force enumeration of all contingency subsets."""
 
     def compute(
         self,
-        backend: SQLiteBackend,
+        db_path: str | Path,
         rewritten_query: str,
         expected_answer: tuple,
         candidates: Iterable[TupleId],
         endogenous_tuples: Iterable[TupleId],
-    ) -> ResponsibilityRanking:
+    ) -> ComputeResult:
         candidates_list = list(candidates)
         endogenous_list = list(endogenous_tuples)
 
         ranking = ResponsibilityRanking()
 
-        for candidate in candidates_list:
-            min_size = self._find_min_contingency_size(
-                backend=backend,
-                rewritten_query=rewritten_query,
-                expected_answer=expected_answer,
-                candidate=candidate,
-                endogenous_tuples=endogenous_list,
-            )
-            score = self.responsibility_from_contingency_size(min_size)
+        # ---- setup phase ----
+        t0 = time.perf_counter()
+        backend = SQLiteBackend(db_path)
+        backend.add_disabled_columns()  # idempotent
+        setup_time = time.perf_counter() - t0
 
-            ranking.results.append(
-                ResponsibilityResult(
-                    tuple_id=candidate,
-                    responsibility=score,
-                    min_contingency_size=min_size,
+        # ---- algorithm phase ----
+        t0 = time.perf_counter()
+        try:
+            for candidate in candidates_list:
+                min_size = self._find_min_contingency_size(
+                    backend=backend,
+                    rewritten_query=rewritten_query,
+                    expected_answer=expected_answer,
+                    candidate=candidate,
+                    endogenous_tuples=endogenous_list,
                 )
-            )
+                score = self.responsibility_from_contingency_size(min_size)
 
-        return ranking
+                ranking.results.append(
+                    ResponsibilityResult(
+                        tuple_id=candidate,
+                        responsibility=score,
+                        min_contingency_size=min_size,
+                    )
+                )
+            algorithm_time = time.perf_counter() - t0
+        finally:
+            # ---- teardown phase ----
+            t0 = time.perf_counter()
+            backend.close()
+            teardown_time = time.perf_counter() - t0
+
+        return ComputeResult(
+            ranking=ranking,
+            setup_time=setup_time,
+            algorithm_time=algorithm_time,
+            teardown_time=teardown_time,
+        )
 
     def _find_min_contingency_size(
         self,

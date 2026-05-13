@@ -35,15 +35,16 @@ COMPUTERS: list[type[ResponsibilityComputer]] = [
 
 
 @pytest.fixture
-def backend() -> SQLiteBackend:
+def db_path() -> Path:
+    """Ensure the smoke-test database exists and has disabled columns."""
     assert DB_PATH.exists(), (
         f"Run `python create_synthetic_dataset.py` first to create {DB_PATH}"
     )
-    b = SQLiteBackend(DB_PATH)
-    b.add_disabled_columns()
-    b.enable_all()
-    yield b
-    b.close()
+    setup = SQLiteBackend(DB_PATH)
+    setup.add_disabled_columns()
+    setup.enable_all()
+    setup.close()
+    return DB_PATH
 
 
 @pytest.fixture
@@ -64,37 +65,36 @@ def query_setup():
 
 
 def test_all_levels_produce_identical_responsibility_scores(
-    backend: SQLiteBackend, query_setup
+    db_path: Path, query_setup
 ) -> None:
     """Every Level should return the same ρ-score for every candidate."""
     rewritten, all_tuples = query_setup
 
     # Compute the reference ranking with the first computer (Naive).
-    reference_computer = COMPUTERS[0]()
-    backend.enable_all()
-    reference_ranking = reference_computer.compute(
-        backend=backend,
+    reference_result = COMPUTERS[0]().compute(
+        db_path=db_path,
         rewritten_query=rewritten,
         expected_answer=("a",),
         candidates=all_tuples,
         endogenous_tuples=all_tuples,
     )
     reference_scores = {
-        r.tuple_id: r.responsibility for r in reference_ranking.results
+        r.tuple_id: r.responsibility
+        for r in reference_result.ranking.results
     }
 
     # Compare every other computer against the reference.
     for ComputerClass in COMPUTERS[1:]:
-        backend.enable_all()
-        ranking = ComputerClass().compute(
-            backend=backend,
+        result = ComputerClass().compute(
+            db_path=db_path,
             rewritten_query=rewritten,
             expected_answer=("a",),
             candidates=all_tuples,
             endogenous_tuples=all_tuples,
         )
-        scores = {r.tuple_id: r.responsibility for r in ranking.results}
-
+        scores = {
+            r.tuple_id: r.responsibility for r in result.ranking.results
+        }
         for tid in reference_scores:
             assert scores[tid] == pytest.approx(reference_scores[tid]), (
                 f"{ComputerClass.__name__} differs from "
@@ -102,17 +102,14 @@ def test_all_levels_produce_identical_responsibility_scores(
                 f"{scores[tid]} vs {reference_scores[tid]}"
             )
 
-
 def test_all_levels_produce_identical_contingency_sizes(
-    backend: SQLiteBackend, query_setup
+    db_path: Path, query_setup
 ) -> None:
     """Every Level should return the same min_contingency_size."""
     rewritten, all_tuples = query_setup
 
-    reference_computer = COMPUTERS[0]()
-    backend.enable_all()
-    reference_ranking = reference_computer.compute(
-        backend=backend,
+    reference_result = COMPUTERS[0]().compute(
+        db_path=db_path,
         rewritten_query=rewritten,
         expected_answer=("a",),
         candidates=all_tuples,
@@ -120,20 +117,20 @@ def test_all_levels_produce_identical_contingency_sizes(
     )
     reference_sizes = {
         r.tuple_id: r.min_contingency_size
-        for r in reference_ranking.results
+        for r in reference_result.ranking.results
     }
 
     for ComputerClass in COMPUTERS[1:]:
-        backend.enable_all()
-        ranking = ComputerClass().compute(
-            backend=backend,
+        result = ComputerClass().compute(
+            db_path=db_path,
             rewritten_query=rewritten,
             expected_answer=("a",),
             candidates=all_tuples,
             endogenous_tuples=all_tuples,
         )
         sizes = {
-            r.tuple_id: r.min_contingency_size for r in ranking.results
+            r.tuple_id: r.min_contingency_size
+            for r in result.ranking.results
         }
 
         for tid in reference_sizes:

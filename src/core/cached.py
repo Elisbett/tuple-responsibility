@@ -20,17 +20,19 @@ A cache can grow large in principle, but in practice:
 """
 from __future__ import annotations
 
+import time
 from itertools import combinations
+from pathlib import Path
 from typing import Iterable
 
 from src.core.responsibility import ResponsibilityComputer
 from src.core.types import (
+    ComputeResult,
     ResponsibilityRanking,
     ResponsibilityResult,
     TupleId,
 )
 from src.db.sqlite_backend import SQLiteBackend
-
 
 class CachedComputer(ResponsibilityComputer):
     """Level 3: early termination + memoization of query results."""
@@ -62,12 +64,12 @@ class CachedComputer(ResponsibilityComputer):
 
     def compute(
         self,
-        backend: SQLiteBackend,
+        db_path: str | Path,
         rewritten_query: str,
         expected_answer: tuple,
         candidates: Iterable[TupleId],
         endogenous_tuples: Iterable[TupleId],
-    ) -> ResponsibilityRanking:
+    ) -> ComputeResult:
         # The cache is meaningful only for a single (query, expected_answer)
         # pair, so we clear it on each call to be safe.
         self.clear_cache()
@@ -77,26 +79,46 @@ class CachedComputer(ResponsibilityComputer):
 
         ranking = ResponsibilityRanking()
 
-        for candidate in candidates_list:
-            min_size = self._find_min_contingency_size(
-                backend=backend,
-                rewritten_query=rewritten_query,
-                expected_answer=expected_answer,
-                candidate=candidate,
-                endogenous_tuples=endogenous_list,
-            )
-            score = self.responsibility_from_contingency_size(min_size)
+        # ---- setup phase ----
+        t0 = time.perf_counter()
+        backend = SQLiteBackend(db_path)
+        backend.add_disabled_columns()
+        setup_time = time.perf_counter() - t0
 
-            ranking.results.append(
-                ResponsibilityResult(
-                    tuple_id=candidate,
-                    responsibility=score,
-                    min_contingency_size=min_size,
+        # ---- algorithm phase ----
+        t0 = time.perf_counter()
+        try:
+            for candidate in candidates_list:
+                min_size = self._find_min_contingency_size(
+                    backend=backend,
+                    rewritten_query=rewritten_query,
+                    expected_answer=expected_answer,
+                    candidate=candidate,
+                    endogenous_tuples=endogenous_list,
                 )
-            )
+                score = self.responsibility_from_contingency_size(min_size)
 
-        return ranking
+                ranking.results.append(
+                    ResponsibilityResult(
+                        tuple_id=candidate,
+                        responsibility=score,
+                        min_contingency_size=min_size,
+                    )
+                )
+            algorithm_time = time.perf_counter() - t0
+        finally:
+            # ---- teardown phase ----
+            t0 = time.perf_counter()
+            backend.close()
+            teardown_time = time.perf_counter() - t0
 
+        return ComputeResult(
+            ranking=ranking,
+            setup_time=setup_time,
+            algorithm_time=algorithm_time,
+            teardown_time=teardown_time,
+        )
+    
     # --- contingency search with caching -------------------------------
 
     def _find_min_contingency_size(

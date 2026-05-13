@@ -56,3 +56,15 @@ class ResponsibilityRanking:
             key=lambda r: r.responsibility,
             reverse=True,
         )
+    
+@dataclass
+class ComputeResult:
+    """Result of a single compute() call: the ranking plus timing breakdown."""
+    ranking: ResponsibilityRanking
+    setup_time: float
+    algorithm_time: float
+    teardown_time: float
+
+    @property
+    def total_time(self) -> float:
+        return self.setup_time + self.algorithm_time + self.teardown_time
