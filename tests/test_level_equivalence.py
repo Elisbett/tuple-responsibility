@@ -19,6 +19,7 @@ import pytest
 from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
 from src.core.naive import NaiveComputer
+from src.core.parallel import ParallelComputer
 from src.core.responsibility import ResponsibilityComputer
 from src.core.types import TupleId
 from src.db.query_rewriter import rewrite_query
@@ -31,6 +32,7 @@ COMPUTERS: list[type[ResponsibilityComputer]] = [
     NaiveComputer,
     EarlyTerminationComputer,
     CachedComputer,
+    ParallelComputer,
 ]
 
 

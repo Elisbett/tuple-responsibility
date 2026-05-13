@@ -20,14 +20,15 @@ from pathlib import Path
 from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
 from src.core.naive import NaiveComputer
+from src.core.parallel import ParallelComputer
 from src.core.responsibility import ResponsibilityComputer
+
 from src.core.types import ComputeResult, TupleId
 from src.db.query_rewriter import rewrite_query
 from src.db.sqlite_backend import SQLiteBackend
 
 DB_PATH = Path("data/synthetic/smoke_test.db")
 REPEATS = 5
-
 
 def one_run(
     computer: ResponsibilityComputer,
@@ -75,6 +76,7 @@ def main() -> None:
         NaiveComputer,
         EarlyTerminationComputer,
         CachedComputer,
+        ParallelComputer,
     ]
 
     for ComputerClass in computers:
