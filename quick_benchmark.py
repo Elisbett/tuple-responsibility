@@ -11,6 +11,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
 from src.core.naive import NaiveComputer
 from src.core.responsibility import ResponsibilityComputer
@@ -63,7 +64,7 @@ def main() -> None:
 
     results: dict[str, float] = {}
 
-    for ComputerClass in [NaiveComputer, EarlyTerminationComputer]:
+    for ComputerClass in [NaiveComputer, EarlyTerminationComputer, CachedComputer]:
         runs = []
         for _ in range(REPEATS):
             elapsed = time_one_run(
@@ -82,8 +83,12 @@ def main() -> None:
     print("-" * 60)
     naive_time = results["NaiveComputer"]
     et_time = results["EarlyTerminationComputer"]
+    cached_time = results["CachedComputer"]
     speedup = naive_time / et_time
-    print(f"Early Termination speedup over Naive: {speedup:.2f}×")
+
+    print(f"Early Termination speedup over Naive:  {naive_time / et_time:.2f}×")
+    print(f"Cached speedup over Naive:             {naive_time / cached_time:.2f}×")
+    print(f"Cached speedup over Early Termination: {et_time / cached_time:.2f}×")
 
     backend.close()
 

@@ -16,6 +16,7 @@ from pathlib import Path
 
 import pytest
 
+from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
 from src.core.naive import NaiveComputer
 from src.core.responsibility import ResponsibilityComputer
@@ -29,6 +30,7 @@ DB_PATH = Path("data/synthetic/smoke_test.db")
 COMPUTERS: list[type[ResponsibilityComputer]] = [
     NaiveComputer,
     EarlyTerminationComputer,
+    CachedComputer,
 ]
 
 
