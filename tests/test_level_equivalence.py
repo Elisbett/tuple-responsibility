@@ -18,6 +18,7 @@ from pathlib import Path
 import pytest
 
 from create_synthetic_datasets import (
+    build_synth_dense,
     build_synth_join3,
     build_synth_large,
     build_synth_medium, 
@@ -45,8 +46,8 @@ COMPUTERS: list[type[ResponsibilityComputer]] = [
 ]
 
 @pytest.fixture(
-    params=["smoke_test", "synth_small", "synth_medium", "synth_large", "synth_join3"],
-    ids=["smoke_test", "synth_small", "synth_medium", "synth_large", "synth_join3"],
+    params=["smoke_test", "synth_small", "synth_medium", "synth_large", "synth_join3", "synth_dense"],
+    ids=["smoke_test", "synth_small", "synth_medium", "synth_large", "synth_join3", "synth_dense"],
 )
 
 def equivalence_setup(request):
@@ -116,6 +117,20 @@ def equivalence_setup(request):
         )
     elif name == "synth_join3":
         spec = build_synth_join3()
+        setup = SQLiteBackend(spec.db_path)
+        setup.add_disabled_columns()
+        setup.close()
+
+        rewritten = rewrite_query(spec.sql_query, spec.aliases)
+        return (
+            spec.db_path,
+            rewritten,
+            spec.expected_answer,
+            spec.candidates,
+            spec.endogenous,
+        )
+    elif name == "synth_dense":
+        spec = build_synth_dense()
         setup = SQLiteBackend(spec.db_path)
         setup.add_disabled_columns()
         setup.close()

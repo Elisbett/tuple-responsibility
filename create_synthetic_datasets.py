@@ -355,6 +355,72 @@ def build_synth_join3() -> DatasetSpec:
         endogenous=all_tuples,
     )
 
+def build_synth_dense() -> DatasetSpec:
+    """Dense-overlap synthetic dataset: 14 endogenous tuples with high
+    minterm overlap.
+
+    The schema is the same as synth_medium/large (R-S 2-way join), but
+    the R-tuples are chosen so that the answer 'a' has many minterms,
+    and tuples from S appear in multiple minterms each. The same
+    subset of disabled tuples therefore recurs many times during the
+    contingency search, which should especially benefit the caching
+    optimisation (Level 3). Used in §6 to illustrate that the relative
+    payoff of caching depends on the structure of the lineage, not
+    only on the size of D_n.
+
+    Schema:
+        R(x, y) -- 9 tuples
+        S(y)    -- 5 tuples
+    """
+    name = "synth_dense"
+    db_path = OUTPUT_DIR / f"{name}.db"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE R (x TEXT, y TEXT)")
+    cur.execute("CREATE TABLE S (y TEXT)")
+
+    # 'a' joins with every S-tuple => 5 minterms for 'a'.
+    # 'c' and 'e' provide additional candidates that don't affect 'a'.
+    r_tuples = [
+        ("a", "b"),  # 1  -- joins with S(b)
+        ("a", "f"),  # 2  -- joins with S(f)
+        ("a", "h"),  # 3  -- joins with S(h)
+        ("a", "k"),  # 4  -- joins with S(k)
+        ("a", "m"),  # 5  -- joins with S(m)
+        ("c", "b"),  # 6
+        ("c", "f"),  # 7
+        ("e", "h"),  # 8
+        ("e", "k"),  # 9
+    ]
+    s_tuples = [
+        ("b",),  # 1
+        ("f",),  # 2
+        ("h",),  # 3
+        ("k",),  # 4
+        ("m",),  # 5
+    ]
+    cur.executemany("INSERT INTO R(x, y) VALUES (?, ?)", r_tuples)
+    cur.executemany("INSERT INTO S(y) VALUES (?)", s_tuples)
+    conn.commit()
+    conn.close()
+
+    all_tuples = [TupleId("R", i) for i in range(1, 10)] + [
+        TupleId("S", i) for i in range(1, 6)
+    ]
+
+    return DatasetSpec(
+        name=name,
+        description="14 endogenous tuples; 2-way join; answer 'a' has 5 minterms.",
+        sql_query="SELECT DISTINCT x FROM R, S WHERE R.y = S.y",
+        aliases={"R": "R", "S": "S"},
+        expected_answer=("a",),
+        candidates=all_tuples,
+        endogenous=all_tuples,
+    )
 # ---------------------------------------------------------------------
 # Registry of all datasets
 # ---------------------------------------------------------------------
@@ -365,7 +431,7 @@ DATASET_REGISTRY: dict[str, callable] = {
     "synth_large": build_synth_large,
     "synth_xlarge": build_synth_xlarge,
     "synth_join3": build_synth_join3,
-    # later: synth_dense
+    "synth_dense": build_synth_dense,
 }
 
 
