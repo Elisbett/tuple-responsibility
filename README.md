@@ -167,4 +167,3 @@ MIT. See `LICENSE`.
 
 Elisaveta Serikova, University of Tartu, 2026.
 Supervised by Miika Hannula, PhD.
-```
