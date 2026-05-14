@@ -284,6 +284,77 @@ def build_synth_xlarge() -> DatasetSpec:
         endogenous=all_tuples,
     )
 
+def build_synth_join3() -> DatasetSpec:
+    """Three-way join dataset: 12 endogenous tuples, R-S-T schema.
+
+    Same |D_n| as synth_medium, but each minterm now consists of THREE
+    supporting tuples instead of two. This changes the algorithmic
+    profile: more SQL evaluations per minterm, different caching
+    behaviour. Used in §6 to demonstrate that the four optimisations
+    behave differently on different query structures.
+
+    Schema:
+        R(x, y) -- 5 tuples
+        S(y, z) -- 4 tuples
+        T(z)    -- 3 tuples
+
+    Query: SELECT DISTINCT x FROM R, S, T WHERE R.y = S.y AND S.z = T.z
+    """
+    name = "synth_join3"
+    db_path = OUTPUT_DIR / f"{name}.db"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE R (x TEXT, y TEXT)")
+    cur.execute("CREATE TABLE S (y TEXT, z TEXT)")
+    cur.execute("CREATE TABLE T (z TEXT)")
+
+    r_tuples = [
+        ("a", "b"),  # 1
+        ("a", "f"),  # 2
+        ("c", "b"),  # 3
+        ("c", "g"),  # 4
+        ("e", "f"),  # 5
+    ]
+    s_tuples = [
+        ("b", "p"),  # 1
+        ("b", "q"),  # 2
+        ("f", "p"),  # 3
+        ("g", "r"),  # 4
+    ]
+    t_tuples = [
+        ("p",),  # 1
+        ("q",),  # 2
+        ("s",),  # 3 -- no match
+    ]
+    cur.executemany("INSERT INTO R(x, y) VALUES (?, ?)", r_tuples)
+    cur.executemany("INSERT INTO S(y, z) VALUES (?, ?)", s_tuples)
+    cur.executemany("INSERT INTO T(z) VALUES (?)", t_tuples)
+    conn.commit()
+    conn.close()
+
+    all_tuples = (
+        [TupleId("R", i) for i in range(1, 6)]
+        + [TupleId("S", i) for i in range(1, 5)]
+        + [TupleId("T", i) for i in range(1, 4)]
+    )
+
+    return DatasetSpec(
+        name=name,
+        description="12 endogenous tuples; 3-way join; structural variation.",
+        sql_query=(
+            "SELECT DISTINCT x FROM R, S, T "
+            "WHERE R.y = S.y AND S.z = T.z"
+        ),
+        aliases={"R": "R", "S": "S", "T": "T"},
+        expected_answer=("a",),
+        candidates=all_tuples,
+        endogenous=all_tuples,
+    )
+
 # ---------------------------------------------------------------------
 # Registry of all datasets
 # ---------------------------------------------------------------------
@@ -293,7 +364,8 @@ DATASET_REGISTRY: dict[str, callable] = {
     "synth_medium": build_synth_medium,
     "synth_large": build_synth_large,
     "synth_xlarge": build_synth_xlarge,
-    # later: synth_join3, synth_dense
+    "synth_join3": build_synth_join3,
+    # later: synth_dense
 }
 
 
