@@ -95,14 +95,25 @@ def _find_min_contingency_size(
 
     This duplicates the logic of
     ResponsibilityComputer.is_valid_contingency (used by Levels 1 and 2)
-    and EarlyTerminationComputer._find_min_contingency_size. The
-    duplication is necessary, not stylistic: Python's multiprocessing
-    on Windows uses the "spawn" start method, which requires worker
-    functions to be importable at module level. A bound method on the
-    base class cannot be pickled and dispatched to workers cleanly. We
-    therefore keep one self-contained module-level implementation for
-    Level 4 and accept the duplication as the cost of clean process
-    boundaries.
+    and EarlyTerminationComputer._find_min_contingency_size.
+
+    Why the duplication: Python's multiprocessing on Windows uses the
+    "spawn" start method, which re-imports modules from scratch in each
+    worker and requires the worker entry point to be importable at
+    module level. The worker entry here is `_worker_one_candidate`,
+    which calls this `_find_min_contingency_size`; keeping the search
+    fully self-contained at module scope avoids any subtle interaction
+    between class hierarchies and the pickling protocol.
+
+    A more DRY variant would call ResponsibilityComputer.is_valid_contingency
+    directly from this function: that method is a @staticmethod and so
+    picklable in principle. We chose the explicit inline form because
+    (a) the duplication is small (two is_answer calls plus four
+    backend state operations), (b) keeping the worker logic visibly
+    standalone makes its single-process behaviour easier to reason
+    about, and (c) we did not want to risk a hard-to-debug pickling
+    interaction one week before the thesis deadline. This is a
+    deliberate engineering trade-off, not a missed refactor.
     """
     other_tuples = [t for t in endogenous_tuples if t != candidate]
 
