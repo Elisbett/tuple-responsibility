@@ -24,7 +24,6 @@ from src.core.types import (
     TupleId,
 )
 
-
 class ResponsibilityComputer(ABC):
     """Base class for computing causal responsibility scores.
 
@@ -84,8 +83,12 @@ class ResponsibilityComputer(ABC):
         return time. Callers that need a clean state should call
         backend.enable_all() afterwards or before their next operation.
 
-        Used by Levels 1, 2, and 4. Level 3 (CachedComputer) overrides
-        this with a memoised version routed through its query cache.
+        Used directly by Levels 1 and 2, which inherit this method as-is.
+        Level 3 (CachedComputer) does NOT override this method; instead
+        it defines a private `_is_valid_contingency` that interposes its
+        query cache. The private name avoids accidental confusion with
+        the inherited public method. Level 4 (ParallelComputer) inlines
+        its own copy at module scope to satisfy multiprocessing pickling.
         """
         backend.enable_all()
         backend.disable_set(gamma)

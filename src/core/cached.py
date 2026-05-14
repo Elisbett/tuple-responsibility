@@ -161,15 +161,18 @@ class CachedComputer(ResponsibilityComputer):
     ) -> bool:
         """Check whether `gamma` is a valid contingency for `candidate`.
 
-        This is a *deliberate override* of the inherited
-        ResponsibilityComputer.is_valid_contingency: both is_answer
-        queries are routed through the local query cache so identical
-        disabled-tuple subsets are not re-evaluated against SQLite.
-        Routing the cache through the base method would require either
-        threading the cache through a kwarg (leaks Level 3 details into
-        the base class) or a thread-local stash (over-engineered for a
-        single-threaded computer). Inlining the two cached is_answer
-        calls keeps the caching local to this class.
+        Note on naming: this is NOT an override of the inherited
+        `ResponsibilityComputer.is_valid_contingency`. The two have
+        different names (private leading underscore here vs. public in
+        the base class), and Python therefore treats them as distinct
+        methods. The choice is deliberate: routing the cache through
+        the inherited public method would require either threading the
+        cache through a kwarg (leaks Level 3 details into the base
+        class) or a thread-local stash (over-engineered for a
+        single-threaded computer). Defining a separate private method
+        here keeps the caching logic fully encapsulated in Level 3 and
+        makes it explicit at the call site that something
+        Level-3-specific is happening.
         """
         gamma_set = frozenset(gamma)
         gamma_plus_candidate = gamma_set | {candidate}
