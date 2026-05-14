@@ -43,16 +43,17 @@ _UNSUPPORTED_KEYWORDS = (
     "HAVING",
 )
 
-
 def _validate_scope(sql: str) -> None:
     """Reject queries outside the supported scope (monotone CQ).
 
     Raises
     ------
     ValueError
-        If the query contains a keyword from `_UNSUPPORTED_KEYWORDS`.
-        The error message names the offending keyword and points the
-        user to the relevant section of the thesis.
+        If the query contains a keyword from `_UNSUPPORTED_KEYWORDS`,
+        or a standalone NOT (negation), which makes the query
+        non-monotone and breaks the soundness of the disabled-tid
+        construction. The error message names the offending construct
+        and points the user to the relevant section of the thesis.
     """
     # Strip string literals first so a keyword embedded in a literal
     # (e.g. WHERE name = 'NOT IN') does not trigger a false positive.
@@ -74,6 +75,19 @@ def _validate_scope(sql: str) -> None:
                 f"Query: {sql!r}"
             )
 
+    # Standalone NOT (i.e. NOT not followed by IN/EXISTS) is also
+    # outside scope: it makes the query non-monotone, so the
+    # disabled-tid construction is not guaranteed to be sound.
+    # Negative lookahead excludes the NOT IN / NOT EXISTS cases which
+    # are already reported by the loop above with a more specific
+    # error message.
+    if re.search(r"\bNOT\b(?!\s+(IN|EXISTS)\b)", upper):
+        raise ValueError(
+            "Query contains a standalone NOT (negation), which is "
+            "outside the supported scope (monotone conjunctive "
+            "queries). See Assumption 1 of the thesis (§3.2). "
+            f"Query: {sql!r}"
+        )
 
 def rewrite_query(sql: str, aliases: dict[str, str]) -> str:
     """Append _disabled=0 conditions to a SQL query.
