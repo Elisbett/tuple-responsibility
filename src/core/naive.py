@@ -138,7 +138,7 @@ class NaiveComputer(ResponsibilityComputer):
 
         for size in range(len(other_tuples) + 1):
             for gamma in combinations(other_tuples, size):
-                if self._is_valid_contingency(
+                if self.is_valid_contingency(
                     backend=backend,
                     rewritten_query=rewritten_query,
                     expected_answer=expected_answer,
@@ -152,35 +152,3 @@ class NaiveComputer(ResponsibilityComputer):
                         best_size = size
 
         return best_size
-
-    def _is_valid_contingency(
-        self,
-        backend: SQLiteBackend,
-        rewritten_query: str,
-        expected_answer: tuple,
-        candidate: TupleId,
-        gamma: tuple[TupleId, ...],
-    ) -> bool:
-        """Check whether `gamma` is a valid contingency for `candidate`.
-
-        Conditions (Definition 2.1 of Meliou et al. 2010):
-            1. D \\ Γ |= q(r)            — answer still present after Γ
-            2. D \\ Γ \\ {t} |/= q(r)    — answer gone after also removing t
-        """
-        # Step 1: disable Γ only.
-        backend.enable_all()
-        backend.disable_set(gamma)
-
-        if not backend.is_answer(rewritten_query, expected_answer):
-            # Removing Γ alone already kills the answer — not a contingency.
-            return False
-
-        # Step 2: additionally disable the candidate.
-        backend.disable(candidate)
-
-        if backend.is_answer(rewritten_query, expected_answer):
-            # Answer survives even with the candidate removed — not valid.
-            return False
-
-        # Both conditions hold: gamma is a valid contingency.
-        return True

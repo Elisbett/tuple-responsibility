@@ -150,7 +150,7 @@ class CachedComputer(ResponsibilityComputer):
                     return size
 
         return None
-
+    
     def _is_valid_contingency(
         self,
         backend: SQLiteBackend,
@@ -161,7 +161,15 @@ class CachedComputer(ResponsibilityComputer):
     ) -> bool:
         """Check whether `gamma` is a valid contingency for `candidate`.
 
-        Both is_answer queries are routed through the cache.
+        This is a *deliberate override* of the inherited
+        ResponsibilityComputer.is_valid_contingency: both is_answer
+        queries are routed through the local query cache so identical
+        disabled-tuple subsets are not re-evaluated against SQLite.
+        Routing the cache through the base method would require either
+        threading the cache through a kwarg (leaks Level 3 details into
+        the base class) or a thread-local stash (over-engineered for a
+        single-threaded computer). Inlining the two cached is_answer
+        calls keeps the caching local to this class.
         """
         gamma_set = frozenset(gamma)
         gamma_plus_candidate = gamma_set | {candidate}

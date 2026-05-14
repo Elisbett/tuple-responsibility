@@ -63,3 +63,41 @@ class ResponsibilityComputer(ABC):
         if min_size is None:
             return 0.0
         return 1.0 / (1.0 + min_size)
+    
+    @staticmethod
+    def is_valid_contingency(
+        backend,
+        rewritten_query: str,
+        expected_answer: tuple,
+        candidate: TupleId,
+        gamma: tuple[TupleId, ...],
+    ) -> bool:
+        r"""Check whether `gamma` is a valid contingency for `candidate`.
+
+        Conditions (Definition 2.1 of Meliou et al. 2010):
+            1. D \\ Γ |= q(r)            — answer still present after Γ
+            2. D \\ Γ \\ {t} |/= q(r)    — answer gone after also removing t
+
+        Implementation: resets the backend, disables Γ, checks the answer
+        survives, then disables the candidate, checks the answer is gone.
+        Side-effect: leaves backend with (Γ ∪ {candidate}) disabled at
+        return time. Callers that need a clean state should call
+        backend.enable_all() afterwards or before their next operation.
+
+        Used by Levels 1, 2, and 4. Level 3 (CachedComputer) overrides
+        this with a memoised version routed through its query cache.
+        """
+        backend.enable_all()
+        backend.disable_set(gamma)
+
+        if not backend.is_answer(rewritten_query, expected_answer):
+            # Removing Γ alone already kills the answer — not a contingency.
+            return False
+
+        backend.disable(candidate)
+
+        if backend.is_answer(rewritten_query, expected_answer):
+            # Answer survives even with candidate removed — not valid.
+            return False
+
+        return True

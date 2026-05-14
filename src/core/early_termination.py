@@ -109,7 +109,7 @@ class EarlyTerminationComputer(ResponsibilityComputer):
 
         for size in range(len(other_tuples) + 1):
             for gamma in combinations(other_tuples, size):
-                if self._is_valid_contingency(
+                if self.is_valid_contingency(
                     backend=backend,
                     rewritten_query=rewritten_query,
                     expected_answer=expected_answer,
@@ -121,28 +121,3 @@ class EarlyTerminationComputer(ResponsibilityComputer):
 
         # No contingency exists at any size: not an actual cause.
         return None
-
-    def _is_valid_contingency(
-        self,
-        backend: SQLiteBackend,
-        rewritten_query: str,
-        expected_answer: tuple,
-        candidate: TupleId,
-        gamma: tuple[TupleId, ...],
-    ) -> bool:
-        """Check whether `gamma` is a valid contingency for `candidate`.
-
-        Same conditions as in NaiveComputer (Def. 2.1 of Meliou et al. 2010).
-        """
-        backend.enable_all()
-        backend.disable_set(gamma)
-
-        if not backend.is_answer(rewritten_query, expected_answer):
-            return False
-
-        backend.disable(candidate)
-
-        if backend.is_answer(rewritten_query, expected_answer):
-            return False
-
-        return True

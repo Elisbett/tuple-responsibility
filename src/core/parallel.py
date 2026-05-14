@@ -91,9 +91,18 @@ def _find_min_contingency_size(
     candidate: TupleId,
     endogenous_tuples: list[TupleId],
 ) -> int | None:
-    """Early-termination contingency search, replicated at module scope
-    so it is importable by worker processes without instantiating a
-    computer class.
+    """Early-termination contingency search at module scope.
+
+    This duplicates the logic of
+    ResponsibilityComputer.is_valid_contingency (used by Levels 1 and 2)
+    and EarlyTerminationComputer._find_min_contingency_size. The
+    duplication is necessary, not stylistic: Python's multiprocessing
+    on Windows uses the "spawn" start method, which requires worker
+    functions to be importable at module level. A bound method on the
+    base class cannot be pickled and dispatched to workers cleanly. We
+    therefore keep one self-contained module-level implementation for
+    Level 4 and accept the duplication as the cost of clean process
+    boundaries.
     """
     other_tuples = [t for t in endogenous_tuples if t != candidate]
 
