@@ -33,12 +33,26 @@ class SQLiteBackend:
 
     DISABLED_COLUMN = "_disabled"
 
-    def __init__(self, db_path: str | Path) -> None:
-        """Open a connection to the SQLite database at the given path."""
+    def __init__(self, db_path: str | Path, timeout: float = 30.0) -> None:
+        """Open a connection to the SQLite database at the given path.
+
+        Parameters
+        ----------
+        db_path : str | Path
+            Path to the SQLite file.
+        timeout : float
+            Seconds to wait for a database lock before raising. Important
+            when multiple worker processes share the same file (Level 4).
+        """
         self.db_path = Path(db_path)
-        self.connection = sqlite3.connect(str(self.db_path))
-        # Return rows as tuples (default behavior, but explicit is better)
+        self.connection = sqlite3.connect(
+            str(self.db_path),
+            timeout=timeout,
+        )
         self.connection.row_factory = None
+
+        self.connection.execute("PRAGMA journal_mode=WAL")
+        self.connection.execute("PRAGMA synchronous=NORMAL")
 
     def close(self) -> None:
         """Close the database connection."""

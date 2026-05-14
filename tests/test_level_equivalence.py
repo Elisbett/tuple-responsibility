@@ -17,7 +17,11 @@ from pathlib import Path
 
 import pytest
 
-from create_synthetic_datasets import build_synth_medium, build_synth_small
+from create_synthetic_datasets import (
+    build_synth_large,
+    build_synth_medium, 
+    build_synth_small,
+)
 
 from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
@@ -40,8 +44,8 @@ COMPUTERS: list[type[ResponsibilityComputer]] = [
 ]
 
 @pytest.fixture(
-    params=["smoke_test", "synth_small", "synth_medium"],
-    ids=["smoke_test", "synth_small", "synth_medium"],
+    params=["smoke_test", "synth_small", "synth_medium", "synth_large"],
+    ids=["smoke_test", "synth_small", "synth_medium", "synth_large"],
 )
 
 def equivalence_setup(request):
@@ -67,7 +71,6 @@ def equivalence_setup(request):
             TupleId("S", 1), TupleId("S", 2), TupleId("S", 3),
         ]
         return (SMOKE_DB_PATH, rewritten, ("a",), all_tuples, all_tuples)
-
     elif name == "synth_small":
         spec = build_synth_small()
         setup = SQLiteBackend(spec.db_path)
@@ -84,6 +87,20 @@ def equivalence_setup(request):
         )
     elif name == "synth_medium":
         spec = build_synth_medium()
+        setup = SQLiteBackend(spec.db_path)
+        setup.add_disabled_columns()
+        setup.close()
+
+        rewritten = rewrite_query(spec.sql_query, spec.aliases)
+        return (
+            spec.db_path,
+            rewritten,
+            spec.expected_answer,
+            spec.candidates,
+            spec.endogenous,
+        )
+    elif name == "synth_large":
+        spec = build_synth_large()
         setup = SQLiteBackend(spec.db_path)
         setup.add_disabled_columns()
         setup.close()
