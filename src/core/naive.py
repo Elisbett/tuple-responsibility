@@ -108,8 +108,23 @@ class NaiveComputer(ResponsibilityComputer):
         Returns None if no such Γ exists (i.e. candidate is not an actual
         cause for the expected answer).
 
-        This naive implementation enumerates ALL subsets of every size
-        from 0 to |D_n| - 1.
+        Naive enumeration semantics
+        ---------------------------
+        This implementation enumerates subsets by increasing size and
+        continues the outer loop through ALL sizes (0..|D_n|-1) rather
+        than stopping at the first valid contingency. Because the loop
+        order is monotonically increasing, the first valid contingency
+        size found is necessarily the minimum, so storing only the
+        first hit (via `if best_size is None`) is correct.
+
+        We deliberately do NOT break out of the loop after finding the
+        first hit: that would constitute the early-termination
+        optimisation of Level 2. Keeping the outer loop intact here
+        preserves the textbook "explore every subset" semantics of the
+        naive algorithm, at the cost of redundant work that Level 2
+        eliminates. This makes the comparison between Levels 1 and 2
+        clean: the only difference between them is whether the loop
+        terminates early.
         """
         # All other endogenous tuples (excluding the candidate itself).
         other_tuples = [t for t in endogenous_tuples if t != candidate]
