@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-from create_synthetic_datasets import build_synth_small
+from create_synthetic_datasets import build_synth_medium, build_synth_small
 
 from src.core.cached import CachedComputer
 from src.core.early_termination import EarlyTerminationComputer
@@ -39,11 +39,11 @@ COMPUTERS: list[type[ResponsibilityComputer]] = [
     ParallelComputer,
 ]
 
-
 @pytest.fixture(
-    params=["smoke_test", "synth_small"],
-    ids=["smoke_test", "synth_small"],
+    params=["smoke_test", "synth_small", "synth_medium"],
+    ids=["smoke_test", "synth_small", "synth_medium"],
 )
+
 def equivalence_setup(request):
     """Yield (db_path, rewritten_query, expected_answer, candidates, endogenous)
     for each dataset we want to check level-equivalence on.
@@ -82,7 +82,20 @@ def equivalence_setup(request):
             spec.candidates,
             spec.endogenous,
         )
+    elif name == "synth_medium":
+        spec = build_synth_medium()
+        setup = SQLiteBackend(spec.db_path)
+        setup.add_disabled_columns()
+        setup.close()
 
+        rewritten = rewrite_query(spec.sql_query, spec.aliases)
+        return (
+            spec.db_path,
+            rewritten,
+            spec.expected_answer,
+            spec.candidates,
+            spec.endogenous,
+        )
     else:
         raise ValueError(f"Unknown dataset name: {name}")
 

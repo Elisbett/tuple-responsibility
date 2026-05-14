@@ -99,6 +99,63 @@ def build_synth_small() -> DatasetSpec:
         endogenous=all_tuples,
     )
 
+def build_synth_medium() -> DatasetSpec:
+    """Medium synthetic dataset: 12 endogenous tuples, single 2-way join.
+
+    Same schema as synth_small (R-S join), more tuples on both sides.
+    The answer 'a' has multiple supporting minterms; some tuples appear
+    in several minterms, making contingency sizes more varied than in
+    synth_small.
+
+    Schema:
+        R(x, y) -- 7 tuples
+        S(y)    -- 5 tuples
+    """
+    name = "synth_medium"
+    db_path = OUTPUT_DIR / f"{name}.db"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE R (x TEXT, y TEXT)")
+    cur.execute("CREATE TABLE S (y TEXT)")
+
+    r_tuples = [
+        ("a", "b"),  # rowid 1
+        ("a", "f"),  # rowid 2
+        ("a", "h"),  # rowid 3
+        ("c", "b"),  # rowid 4
+        ("c", "g"),  # rowid 5
+        ("e", "f"),  # rowid 6
+        ("e", "h"),  # rowid 7
+    ]
+    s_tuples = [
+        ("b",),  # rowid 1
+        ("f",),  # rowid 2
+        ("g",),  # rowid 3
+        ("h",),  # rowid 4
+        ("k",),  # rowid 5  -- not joined with any R
+    ]
+    cur.executemany("INSERT INTO R(x, y) VALUES (?, ?)", r_tuples)
+    cur.executemany("INSERT INTO S(y) VALUES (?)", s_tuples)
+    conn.commit()
+    conn.close()
+
+    all_tuples = [TupleId("R", i) for i in range(1, 8)] + [
+        TupleId("S", i) for i in range(1, 6)
+    ]
+
+    return DatasetSpec(
+        name=name,
+        description="12 endogenous tuples; 2-way join; answer 'a' has 3 minterms.",
+        sql_query="SELECT DISTINCT x FROM R, S WHERE R.y = S.y",
+        aliases={"R": "R", "S": "S"},
+        expected_answer=("a",),
+        candidates=all_tuples,
+        endogenous=all_tuples,
+    )
 
 # ---------------------------------------------------------------------
 # Registry of all datasets
@@ -106,7 +163,8 @@ def build_synth_small() -> DatasetSpec:
 
 DATASET_REGISTRY: dict[str, callable] = {
     "synth_small": build_synth_small,
-    # later: synth_medium, synth_large, synth_xlarge, synth_join3, synth_dense
+    "synth_medium": build_synth_medium,
+    # later: synth_large, synth_xlarge, synth_join3, synth_dense
 }
 
 
