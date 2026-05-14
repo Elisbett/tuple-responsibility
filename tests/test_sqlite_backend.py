@@ -108,3 +108,64 @@ def test_is_answer_returns_false_after_disabling(
     rewritten = rewrite_query(sql, {"R": "R", "S": "S"})
 
     assert backend.is_answer(rewritten, ("a",)) is False
+
+# ----------------------------------------------------------------------
+# Tests for find_tuple / find_tuples helpers
+# ----------------------------------------------------------------------
+
+def test_find_tuple_returns_correct_tupleid(backend) -> None:
+    """find_tuple resolves a row identified by column values to its rowid."""
+    # smoke_test.db has R(x, y) with rows (a,b), (a,f), (c,b), (c,g) at
+    # rowids 1, 2, 3, 4. Find R(a, b).
+    found = backend.find_tuple("R", {"x": "a", "y": "b"})
+    assert found == TupleId("R", 1)
+
+
+def test_find_tuple_with_partial_unique_match(backend) -> None:
+    """A subset of conditions works if it uniquely identifies a row."""
+    # Only R(c, g) has y='g'.
+    found = backend.find_tuple("R", {"y": "g"})
+    assert found == TupleId("R", 4)
+
+
+def test_find_tuple_raises_on_no_match(backend) -> None:
+    """find_tuple raises ValueError when no row matches."""
+    with pytest.raises(ValueError, match="No row"):
+        backend.find_tuple("R", {"x": "nonexistent"})
+
+
+def test_find_tuple_raises_on_multiple_matches(backend) -> None:
+    """find_tuple raises ValueError when conditions are ambiguous."""
+    # R has two rows with x='a': R(a, b) and R(a, f).
+    with pytest.raises(ValueError, match="Multiple rows"):
+        backend.find_tuple("R", {"x": "a"})
+
+
+def test_find_tuple_raises_on_empty_where(backend) -> None:
+    """find_tuple refuses to run with no conditions."""
+    with pytest.raises(ValueError, match="at least one"):
+        backend.find_tuple("R", {})
+
+
+def test_find_tuples_returns_all_matching_rows(backend) -> None:
+    """find_tuples returns every row meeting the conditions."""
+    # R has two rows with x='a'.
+    found = backend.find_tuples("R", {"x": "a"})
+    assert found == [TupleId("R", 1), TupleId("R", 2)]
+
+
+def test_find_tuples_returns_empty_list_on_no_match(backend) -> None:
+    """find_tuples returns [] when nothing matches (no exception)."""
+    assert backend.find_tuples("R", {"x": "nonexistent"}) == []
+
+
+def test_find_tuples_without_where_returns_all_rows(backend) -> None:
+    """An empty/None `where` yields every row of the table."""
+    found = backend.find_tuples("R")
+    # smoke_test has 4 R rows.
+    assert found == [
+        TupleId("R", 1),
+        TupleId("R", 2),
+        TupleId("R", 3),
+        TupleId("R", 4),
+    ]

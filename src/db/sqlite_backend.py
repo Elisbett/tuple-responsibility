@@ -167,3 +167,112 @@ class SQLiteBackend:
         """
         rows = self.execute_query(rewritten_query)
         return expected_row in rows
+    
+    # ------------------------------------------------------------------
+    # Tuple lookup by column values
+    # ------------------------------------------------------------------
+
+    def find_tuple(
+        self,
+        table: str,
+        where: dict[str, object],
+    ) -> TupleId:
+        """Find the TupleId of a row identified by column values.
+
+        Lets callers refer to tuples by content ("the Director row
+        with lastName='Burton' and firstName='David'") instead of by
+        SQLite's internal rowid. Intended as the main entry point for
+        users assembling a candidate set without having to inspect
+        rowid values directly.
+
+        Parameters
+        ----------
+        table : str
+            The table to search in (e.g. "Director").
+        where : dict[str, object]
+            Column-value conditions. Each entry is matched with `=`
+            and combined with AND. For example
+            ``{"firstName": "David", "lastName": "Burton"}`` is turned
+            into ``WHERE firstName = ? AND lastName = ?``.
+
+        Returns
+        -------
+        TupleId
+            The (table, rowid) pair of the unique matching row.
+
+        Raises
+        ------
+        ValueError
+            If zero or more than one row matches the conditions. The
+            caller is expected to supply enough conditions to identify
+            exactly one row.
+
+        Examples
+        --------
+        >>> backend = SQLiteBackend("imdb.db")
+        >>> david = backend.find_tuple(
+        ...     "Director",
+        ...     {"firstName": "David", "lastName": "Burton"},
+        ... )
+        >>> david
+        TupleId(relation='Director', key=1)
+        """
+        if not where:
+            raise ValueError(
+                "find_tuple requires at least one column-value condition "
+                "to identify a row; got an empty `where` dict."
+            )
+
+        conditions = " AND ".join(f"{col} = ?" for col in where)
+        sql = f"SELECT rowid FROM {table} WHERE {conditions}"
+        rows = self.connection.execute(sql, tuple(where.values())).fetchall()
+
+        if len(rows) == 0:
+            raise ValueError(
+                f"No row in table '{table}' matches conditions {where}."
+            )
+        if len(rows) > 1:
+            raise ValueError(
+                f"Multiple rows ({len(rows)}) in table '{table}' match "
+                f"conditions {where}. Refine the conditions to identify "
+                f"exactly one row."
+            )
+
+        return TupleId(relation=table, key=rows[0][0])
+
+    def find_tuples(
+        self,
+        table: str,
+        where: dict[str, object] | None = None,
+    ) -> list[TupleId]:
+        """Find all TupleIds matching the given conditions (zero allowed).
+
+        Convenience method for selecting an entire group of candidates,
+        e.g. "every Director row" (empty conditions) or "every Movie
+        with year > 2000" (a single condition).
+
+        Parameters
+        ----------
+        table : str
+            The table to search.
+        where : dict[str, object] | None
+            Column-value equality conditions, ANDed together. If None
+            or empty, returns every row of the table.
+
+        Returns
+        -------
+        list[TupleId]
+            One TupleId per matching row, in rowid order. Empty list
+            if no rows match (no exception, unlike `find_tuple`).
+        """
+        if where:
+            conditions = " AND ".join(f"{col} = ?" for col in where)
+            sql = f"SELECT rowid FROM {table} WHERE {conditions} ORDER BY rowid"
+            rows = self.connection.execute(
+                sql, tuple(where.values())
+            ).fetchall()
+        else:
+            sql = f"SELECT rowid FROM {table} ORDER BY rowid"
+            rows = self.connection.execute(sql).fetchall()
+
+        return [TupleId(relation=table, key=row[0]) for row in rows]
