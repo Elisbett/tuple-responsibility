@@ -1,34 +1,32 @@
 """Level 4: parallelisation of the per-candidate contingency search.
 
-Each candidate's contingency search is independent of the others —
-no shared state, no ordering constraint — so the candidate loop is
-embarrassingly parallel. This level distributes that loop across
-worker processes via multiprocessing.Pool.
+Each candidate's contingency search is independent of the others — no
+shared state, no ordering constraint — so the candidate loop is
+embarrassingly parallel. This level distributes that loop across worker
+processes via multiprocessing.Pool.
 
-Implementation notes
---------------------
-- Each worker opens its own SQLiteBackend on the same database file.
-  Concurrent reads on a single SQLite file are safe; concurrent writes
-  (UPDATE _disabled) are serialised by SQLite's per-database lock,
-  but since each worker handles only its own candidate, there is no
-  contention in practice.
-- The worker function is at module level (not a method) so it can be
-  pickled by multiprocessing on Windows.
-- Caching is intentionally NOT applied inside workers. Sharing a cache
-  across processes via Manager() would dominate the runtime; isolating
-  one optimisation per level makes the benchmarks in §6 easier to
-  interpret.
+Implementation note: each worker is given its own copy of the database
+file. SQLite serialises concurrent writers on a single file, and the
+high write rate of the contingency search (millions of UPDATEs on
+_disabled per candidate) makes shared-file access impractical even
+with WAL mode. Copying the file once before starting the pool removes
+all inter-worker contention at the cost of a few megabytes of disk and
+one fast file copy per worker; given that the algorithmic work is in
+seconds-to-minutes, this overhead is negligible.
 
-Timing semantics
-----------------
-Setup_time here measures Pool startup, not just connection opening.
-On Windows this can be 100-500 ms because each worker fully re-imports
-the project modules ("spawn" start method). On large workloads this
-becomes negligible; on tiny ones (like smoke_test.db) it dominates.
+The worker function is at module level so it can be pickled by
+multiprocessing on Windows.
+
+Timing semantics: setup_time here includes Pool startup and the per-worker
+file copy, not just connection opening. On Windows this can be 100-500 ms
+because each worker fully re-imports the project modules ("spawn" start
+method). On small workloads this dominates; on large ones it is negligible.
 """
 from __future__ import annotations
 
 import os
+import shutil
+import tempfile
 import time
 from itertools import combinations
 from multiprocessing import Pool
@@ -52,10 +50,9 @@ from src.db.sqlite_backend import SQLiteBackend
 def _worker_one_candidate(args: tuple) -> ResponsibilityResult:
     """Compute responsibility for ONE candidate, in a worker process.
 
-    Each worker process opens its own connection, performs the
-    early-termination search for its assigned candidate, and closes.
-    Returns a ResponsibilityResult ready to be appended to the ranking
-    in the parent process.
+    Each worker process opens its own (already-copied) database file,
+    performs the early-termination search for its assigned candidate,
+    and closes the file. No two workers ever touch the same .db file.
     """
     (
         db_path,
@@ -122,7 +119,12 @@ def _find_min_contingency_size(
 # ---------------------------------------------------------------------
 
 class ParallelComputer(ResponsibilityComputer):
-    """Level 4: per-candidate parallelisation via multiprocessing.Pool."""
+    """Level 4: per-candidate parallelisation via multiprocessing.Pool.
+
+    Each worker process operates on its own copy of the database file
+    to avoid lock contention. Copies are placed in a temporary directory
+    and deleted automatically when compute() returns.
+    """
 
     def __init__(self, num_workers: int | None = None) -> None:
         """Create a parallel computer.
@@ -145,23 +147,38 @@ class ParallelComputer(ResponsibilityComputer):
         candidates_list = list(candidates)
         endogenous_list = list(endogenous_tuples)
 
-        # Pack arguments for each worker invocation.
-        work_items = [
-            (
-                str(db_path),
-                rewritten_query,
-                expected_answer,
-                candidate,
-                endogenous_list,
-            )
-            for candidate in candidates_list
-        ]
-
-        # ---- setup phase: ensure disabled columns exist, then start Pool.
+        # ---- setup phase: make per-worker DB copies, start the Pool.
         t0 = time.perf_counter()
-        prep = SQLiteBackend(db_path)
-        prep.add_disabled_columns()
-        prep.close()
+
+        # Ensure disabled columns exist on the master file first.
+        master = SQLiteBackend(db_path)
+        master.add_disabled_columns()
+        master.close()
+
+        # Create per-worker copies in a fresh temp directory.
+        tmpdir = Path(tempfile.mkdtemp(prefix="resp_parallel_"))
+        worker_db_paths = []
+        for i in range(self.num_workers):
+            copy_path = tmpdir / f"worker_{i}.db"
+            shutil.copyfile(str(db_path), str(copy_path))
+            worker_db_paths.append(copy_path)
+
+        # Round-robin assign each candidate to a worker file.
+        # multiprocessing.Pool's chunksize handles scheduling; the file
+        # assignment just guarantees each candidate has a private file.
+        work_items = []
+        for idx, candidate in enumerate(candidates_list):
+            assigned_db = worker_db_paths[idx % self.num_workers]
+            work_items.append(
+                (
+                    str(assigned_db),
+                    rewritten_query,
+                    expected_answer,
+                    candidate,
+                    endogenous_list,
+                )
+            )
+
         pool = Pool(processes=self.num_workers)
         setup_time = time.perf_counter() - t0
 
@@ -171,10 +188,11 @@ class ParallelComputer(ResponsibilityComputer):
             results = pool.map(_worker_one_candidate, work_items)
             algorithm_time = time.perf_counter() - t0
         finally:
-            # ---- teardown phase: shut down workers.
+            # ---- teardown phase: stop workers, clean up temp files.
             t0 = time.perf_counter()
             pool.close()
             pool.join()
+            shutil.rmtree(tmpdir, ignore_errors=True)
             teardown_time = time.perf_counter() - t0
 
         ranking = ResponsibilityRanking(results=list(results))

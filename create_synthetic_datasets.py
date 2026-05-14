@@ -218,6 +218,72 @@ def build_synth_large() -> DatasetSpec:
         candidates=all_tuples,
         endogenous=all_tuples,
     )
+
+def build_synth_xlarge() -> DatasetSpec:
+    """X-large synthetic dataset: 20 endogenous tuples, 2-way join.
+
+    The size at which Naive becomes impractical (minutes per query),
+    while Cached and Parallel remain usable. This dataset is the main
+    illustration of the engineering payoff documented in §6.
+
+    Schema:
+        R(x, y) -- 13 tuples
+        S(y)    --  7 tuples
+    """
+    name = "synth_xlarge"
+    db_path = OUTPUT_DIR / f"{name}.db"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+    cur.execute("CREATE TABLE R (x TEXT, y TEXT)")
+    cur.execute("CREATE TABLE S (y TEXT)")
+
+    r_tuples = [
+        ("a", "b"),  # 1
+        ("a", "f"),  # 2
+        ("a", "h"),  # 3
+        ("a", "k"),  # 4
+        ("a", "m"),  # 5
+        ("c", "b"),  # 6
+        ("c", "g"),  # 7
+        ("c", "k"),  # 8
+        ("c", "p"),  # 9
+        ("e", "f"),  # 10
+        ("e", "h"),  # 11
+        ("e", "m"),  # 12
+        ("e", "r"),  # 13
+    ]
+    s_tuples = [
+        ("b",),  # 1
+        ("f",),  # 2
+        ("g",),  # 3
+        ("h",),  # 4
+        ("k",),  # 5
+        ("m",),  # 6
+        ("n",),  # 7 -- no match
+    ]
+    cur.executemany("INSERT INTO R(x, y) VALUES (?, ?)", r_tuples)
+    cur.executemany("INSERT INTO S(y) VALUES (?)", s_tuples)
+    conn.commit()
+    conn.close()
+
+    all_tuples = [TupleId("R", i) for i in range(1, 14)] + [
+        TupleId("S", i) for i in range(1, 8)
+    ]
+
+    return DatasetSpec(
+        name=name,
+        description="20 endogenous tuples; 2-way join; answer 'a' has 5 minterms.",
+        sql_query="SELECT DISTINCT x FROM R, S WHERE R.y = S.y",
+        aliases={"R": "R", "S": "S"},
+        expected_answer=("a",),
+        candidates=all_tuples,
+        endogenous=all_tuples,
+    )
+
 # ---------------------------------------------------------------------
 # Registry of all datasets
 # ---------------------------------------------------------------------
@@ -226,7 +292,8 @@ DATASET_REGISTRY: dict[str, callable] = {
     "synth_small": build_synth_small,
     "synth_medium": build_synth_medium,
     "synth_large": build_synth_large,
-    # later: synth_xlarge, synth_join3, synth_dense
+    "synth_xlarge": build_synth_xlarge,
+    # later: synth_join3, synth_dense
 }
 
 
