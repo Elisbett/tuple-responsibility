@@ -421,6 +421,142 @@ def build_synth_dense() -> DatasetSpec:
         candidates=all_tuples,
         endogenous=all_tuples,
     )
+
+def build_imdb_burton() -> DatasetSpec:
+    """IMDB 'Musical' case study from Meliou et al. 2010 (IEEE DEB, Fig. 2).
+
+    Reproduces the 21-tuple Burton subset shown in Figure 2(a) of:
+        Meliou, Gatterbauer, Halpern, Koch, Moore, Suciu (2010).
+        "Causality in Databases", IEEE Data Engineering Bulletin.
+
+    Director-Movie assignments are reconstructed from the paper's text
+    and the explicit minimum contingency in PVLDB footnote 2:
+        - Tim Burton:      Sweeney Todd (only — his "one musical")
+        - Humphrey Burton: Manon Lescaut, Flight, Candide (musicals specialist)
+        - David Burton:    Let's Fall in Love, The Melody Lingers On
+
+    Query: "Which genres did anyone named Burton direct?"
+    Answer of interest: ("Musical",)  — a surprising answer to debug.
+
+    Per the paper, only Director and Movie rows are endogenous
+    (9 candidates). Movie_Directors and Genre rows are exogenous.
+
+    Expected responsibility scores (Figure 2(b)):
+        Sweeney Todd (Movie 526338)                 -> 0.33
+        David Burton (Director 23456)               -> 0.33
+        Humphrey Burton (Director 23468)            -> 0.33
+        Tim Burton (Director 23488)                 -> 0.33
+        Let's Fall in Love (Movie 359516)           -> 0.25
+        The Melody Lingers On (Movie 565577)        -> 0.25
+        Candide (Movie 6539)                        -> 0.20
+        Flight (Movie 173629)                       -> 0.20
+        Manon Lescaut (Movie 389987)                -> 0.20
+    """
+    name = "imdb_burton"
+    db_path = OUTPUT_DIR / f"{name}.db"
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    if db_path.exists():
+        db_path.unlink()
+
+    conn = sqlite3.connect(str(db_path))
+    cur = conn.cursor()
+
+    cur.execute(
+        "CREATE TABLE Director (did INTEGER, firstName TEXT, lastName TEXT)"
+    )
+    cur.execute(
+        "CREATE TABLE Movie (mid INTEGER, name TEXT, year INTEGER)"
+    )
+    cur.execute(
+        "CREATE TABLE Movie_Directors (did INTEGER, mid INTEGER)"
+    )
+    cur.execute("CREATE TABLE Genre (mid INTEGER, genre TEXT)")
+
+    # Directors (rowid 1..3 = endogenous candidates).
+    directors = [
+        (23456, "David", "Burton"),       # rowid 1
+        (23468, "Humphrey", "Burton"),    # rowid 2
+        (23488, "Tim", "Burton"),         # rowid 3
+    ]
+    cur.executemany(
+        "INSERT INTO Director(did, firstName, lastName) VALUES (?, ?, ?)",
+        directors,
+    )
+
+    # Movies (rowid 1..6 = endogenous candidates).
+    movies = [
+        (565577, "The Melody Lingers On", 1935),  # rowid 1  - David
+        (359516, "Let's Fall in Love", 1933),     # rowid 2  - David
+        (389987, "Manon Lescaut", 1997),          # rowid 3  - Humphrey
+        (173629, "Flight", 1999),                 # rowid 4  - Humphrey
+        (6539,   "Candide", 1989),                # rowid 5  - Humphrey
+        (526338, "Sweeney Todd", 2007),           # rowid 6  - Tim
+    ]
+    cur.executemany(
+        "INSERT INTO Movie(mid, name, year) VALUES (?, ?, ?)",
+        movies,
+    )
+
+    # Movie_Directors (exogenous) — asymmetric assignment per paper:
+    #   David     -> 2 movies
+    #   Humphrey  -> 3 movies   (the musicals specialist)
+    #   Tim       -> 1 movie    (Sweeney Todd, his "one musical")
+    movie_directors = [
+        (23456, 565577),  # David -> Melody Lingers On
+        (23456, 359516),  # David -> Let's Fall in Love
+        (23468, 389987),  # Humphrey -> Manon Lescaut
+        (23468, 173629),  # Humphrey -> Flight
+        (23468, 6539),    # Humphrey -> Candide
+        (23488, 526338),  # Tim -> Sweeney Todd
+    ]
+    cur.executemany(
+        "INSERT INTO Movie_Directors(did, mid) VALUES (?, ?)",
+        movie_directors,
+    )
+
+    # Genre (exogenous): all 6 movies tagged "Musical", per the paper.
+    genres = [
+        (565577, "Musical"),
+        (359516, "Musical"),
+        (389987, "Musical"),
+        (173629, "Musical"),
+        (6539,   "Musical"),
+        (526338, "Musical"),
+    ]
+    cur.executemany("INSERT INTO Genre(mid, genre) VALUES (?, ?)", genres)
+
+    conn.commit()
+    conn.close()
+
+    endogenous = [TupleId("Director", i) for i in range(1, 4)] + [
+        TupleId("Movie", i) for i in range(1, 7)
+    ]
+
+    return DatasetSpec(
+        name=name,
+        description=(
+            "Meliou et al. 2010 IMDB case study: 9 endogenous tuples "
+            "(3 directors + 6 movies); Musical answer to debug. "
+            "Asymmetric: Tim->1, David->2, Humphrey->3 movies."
+        ),
+        sql_query=(
+            "SELECT DISTINCT g.genre "
+            "FROM Director d, Movie_Directors md, Movie m, Genre g "
+            "WHERE d.lastName = 'Burton' "
+            "AND g.mid = m.mid "
+            "AND m.mid = md.mid "
+            "AND md.did = d.did"
+        ),
+        aliases={
+            "d": "Director",
+            "md": "Movie_Directors",
+            "m": "Movie",
+            "g": "Genre",
+        },
+        expected_answer=("Musical",),
+        candidates=endogenous,
+        endogenous=endogenous,
+    )
 # ---------------------------------------------------------------------
 # Registry of all datasets
 # ---------------------------------------------------------------------
@@ -432,6 +568,7 @@ DATASET_REGISTRY: dict[str, callable] = {
     "synth_xlarge": build_synth_xlarge,
     "synth_join3": build_synth_join3,
     "synth_dense": build_synth_dense,
+    "imdb_burton": build_imdb_burton,
 }
 
 
