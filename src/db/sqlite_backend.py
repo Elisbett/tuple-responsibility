@@ -209,13 +209,14 @@ class SQLiteBackend:
 
         Examples
         --------
-        >>> backend = SQLiteBackend("imdb.db")
-        >>> david = backend.find_tuple(
-        ...     "Director",
-        ...     {"firstName": "David", "lastName": "Burton"},
-        ... )
-        >>> david
-        TupleId(relation='Director', key=1)
+        Resolve a director identified by name to a TupleId::
+
+            backend = SQLiteBackend("imdb.db")
+            david = backend.find_tuple(
+                "Director",
+                {"firstName": "David", "lastName": "Burton"},
+            )
+            # -> TupleId(relation='Director', key=1)
         """
         if not where:
             raise ValueError(
